@@ -10,9 +10,16 @@ from starlette.staticfiles import StaticFiles
 import pathlib
 import whisperlivekit.web as webpkg
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import sys
 import warnings
+
+# 设置东八区时区
+CHINA_TZ = timezone(timedelta(hours=8))
+
+def get_china_time():
+    """获取东八区当前时间"""
+    return datetime.now(CHINA_TZ)
 
 # 设置日志格式和基础配置
 def setup_file_logging(service_name: str = None):
@@ -25,7 +32,7 @@ def setup_file_logging(service_name: str = None):
             service_name = "asr-user"
     
     log_base_dir = os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = get_china_time().strftime('%Y-%m-%d')
     
     # 为不同级别创建文件处理器
     levels = ['debug', 'info', 'warn', 'error']
@@ -126,7 +133,7 @@ logger.info(
     "Log files will be written to: %s/[level]/%s/%s/[level].log",
     _log_base_dir_display,
     service_name,
-    datetime.now().strftime('%Y-%m-%d'),
+    get_china_time().strftime('%Y-%m-%d'),
 )
 
 args = parse_args()
@@ -153,7 +160,7 @@ async def lifespan(app: FastAPI):
         # 添加 debug 级别文件处理器
         debug_dir = os.path.join(
             os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
-            'debug', service_name, datetime.now().strftime('%Y-%m-%d')
+            'debug', service_name, get_china_time().strftime('%Y-%m-%d')
         )
         os.makedirs(debug_dir, exist_ok=True)
         debug_file = os.path.join(debug_dir, 'debug.log')
@@ -169,7 +176,7 @@ async def lifespan(app: FastAPI):
         # 添加 info 级别文件处理器
         info_dir = os.path.join(
             os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
-            'info', service_name, datetime.now().strftime('%Y-%m-%d')
+            'info', service_name, get_china_time().strftime('%Y-%m-%d')
         )
         os.makedirs(info_dir, exist_ok=True)
         info_file = os.path.join(info_dir, 'info.log')
@@ -185,7 +192,7 @@ async def lifespan(app: FastAPI):
         # 添加 warn 级别文件处理器
         warn_dir = os.path.join(
             os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
-            'warn', service_name, datetime.now().strftime('%Y-%m-%d')
+            'warn', service_name, get_china_time().strftime('%Y-%m-%d')
         )
         os.makedirs(warn_dir, exist_ok=True)
         warn_file = os.path.join(warn_dir, 'warn.log')
@@ -201,7 +208,7 @@ async def lifespan(app: FastAPI):
         # 添加 error 级别文件处理器
         error_dir = os.path.join(
             os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
-            'error', service_name, datetime.now().strftime('%Y-%m-%d')
+            'error', service_name, get_china_time().strftime('%Y-%m-%d')
         )
         os.makedirs(error_dir, exist_ok=True)
         error_file = os.path.join(error_dir, 'error.log')
@@ -329,7 +336,7 @@ def main():
     
     # 记录启动信息
     logger.info(f"WhisperLiveKit {service_name} starting up in main()")
-    logger.info(f"Log files will be written to: {os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')}/[level]/{service_name}/{datetime.now().strftime('%Y-%m-%d')}/[level].log")
+    logger.info(f"Log files will be written to: {os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')}/[level]/{service_name}/{get_china_time().strftime('%Y-%m-%d')}/[level].log")
     
     # 在 uvicorn 启动前记录启动信息
     logger.info("Starting uvicorn server...")
@@ -355,14 +362,14 @@ def main():
             "file_info": {
                 "formatter": "default",
                 "class": "logging.FileHandler",
-                "filename": f"/opt/cuemate/logs/info/{service_name}/{datetime.now().strftime('%Y-%m-%d')}/info.log",
+                "filename": f"/opt/cuemate/logs/info/{service_name}/{get_china_time().strftime('%Y-%m-%d')}/info.log",
                 "encoding": "utf-8",
                 "level": "INFO",
             },
             "file_error": {
                 "formatter": "default", 
                 "class": "logging.FileHandler",
-                "filename": f"/opt/cuemate/logs/error/{service_name}/{datetime.now().strftime('%Y-%m-%d')}/error.log",
+                "filename": f"/opt/cuemate/logs/error/{service_name}/{get_china_time().strftime('%Y-%m-%d')}/error.log",
                 "encoding": "utf-8",
                 "level": "ERROR",
             },
