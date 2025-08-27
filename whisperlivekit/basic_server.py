@@ -15,8 +15,15 @@ import sys
 import warnings
 
 # 设置日志格式和基础配置
-def setup_file_logging(service_name: str = "asr-service"):
+def setup_file_logging(service_name: str = None):
     """设置文件日志输出，按照 CueMate 项目的日志格式"""
+    if service_name is None:
+        # 根据环境变量确定服务名称
+        if os.environ.get('ASR_SERVICE_TYPE') == 'interviewer':
+            service_name = "asr-interviewer"
+        else:
+            service_name = "asr-user"
+    
     log_base_dir = os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')
     today = datetime.now().strftime('%Y-%m-%d')
     
@@ -51,18 +58,11 @@ def setup_file_logging(service_name: str = "asr-service"):
     
     return handlers
 
-# 获取服务名称（从端口号推断）
-service_name = "asr-service"
-for arg in sys.argv:
-    if arg == "--port" and sys.argv.index(arg) + 1 < len(sys.argv):
-        port = sys.argv[sys.argv.index(arg) + 1]
-        if port == "8000":
-            # 从环境变量或其他方式确定是 user 还是 interviewer
-            if os.environ.get('ASR_SERVICE_TYPE') == 'interviewer':
-                service_name = "asr-interviewer"
-            else:
-                service_name = "asr-user"
-        break
+# 获取服务名称（根据环境变量 ASR_SERVICE_TYPE 判断）
+if os.environ.get('ASR_SERVICE_TYPE') == 'interviewer':
+    service_name = "asr-interviewer"
+else:
+    service_name = "asr-user"
 
 # 设置控制台输出
 logging.basicConfig(
@@ -117,6 +117,8 @@ except RuntimeError:
     # 在新事件循环创建前设置可能抛错，忽略并在 lifespan 中由 uvicorn 管理
     pass
 
+
+
 # 记录启动信息
 logger.info(f"WhisperLiveKit {service_name} starting up")
 _log_base_dir_display = os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')
@@ -133,6 +135,88 @@ transcription_engine = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global transcription_engine
+    
+    # 重新配置 uvicorn 日志记录器，让它们也写入到我们的日志文件
+    import logging
+    
+    # 为 uvicorn 日志记录器添加文件处理器，避免重复
+    uvicorn_loggers = ['uvicorn', 'uvicorn.error', 'uvicorn.access']
+    
+    for logger_name in uvicorn_loggers:
+        logger_obj = logging.getLogger(logger_name)
+        
+        # 清除现有的文件处理器，避免重复
+        for handler in logger_obj.handlers[:]:
+            if isinstance(handler, logging.FileHandler):
+                logger_obj.removeHandler(handler)
+        
+        # 添加 debug 级别文件处理器
+        debug_dir = os.path.join(
+            os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
+            'debug', service_name, datetime.now().strftime('%Y-%m-%d')
+        )
+        os.makedirs(debug_dir, exist_ok=True)
+        debug_file = os.path.join(debug_dir, 'debug.log')
+        
+        debug_handler = logging.FileHandler(debug_file, encoding='utf-8')
+        debug_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+        debug_handler.setLevel(logging.DEBUG)
+        logger_obj.addHandler(debug_handler)
+        
+        # 添加 info 级别文件处理器
+        info_dir = os.path.join(
+            os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
+            'info', service_name, datetime.now().strftime('%Y-%m-%d')
+        )
+        os.makedirs(info_dir, exist_ok=True)
+        info_file = os.path.join(info_dir, 'info.log')
+        
+        info_handler = logging.FileHandler(info_file, encoding='utf-8')
+        info_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+        info_handler.setLevel(logging.INFO)
+        logger_obj.addHandler(info_handler)
+        
+        # 添加 warn 级别文件处理器
+        warn_dir = os.path.join(
+            os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
+            'warn', service_name, datetime.now().strftime('%Y-%m-%d')
+        )
+        os.makedirs(warn_dir, exist_ok=True)
+        warn_file = os.path.join(warn_dir, 'warn.log')
+        
+        warn_handler = logging.FileHandler(warn_file, encoding='utf-8')
+        warn_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+        warn_handler.setLevel(logging.WARNING)
+        logger_obj.addHandler(warn_handler)
+        
+        # 添加 error 级别文件处理器
+        error_dir = os.path.join(
+            os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
+            'error', service_name, datetime.now().strftime('%Y-%m-%d')
+        )
+        os.makedirs(error_dir, exist_ok=True)
+        error_file = os.path.join(error_dir, 'error.log')
+        
+        error_handler = logging.FileHandler(error_file, encoding='utf-8')
+        error_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+        error_handler.setLevel(logging.ERROR)
+        logger_obj.addHandler(error_handler)
+        
+        logger_obj.setLevel(logging.DEBUG)
+        logger_obj.propagate = False  # 防止传播到根日志记录器
+    
     transcription_engine = TranscriptionEngine(
         **vars(args),
     )
@@ -228,7 +312,83 @@ async def websocket_endpoint(websocket: WebSocket):
 
 def main():
     """Entry point for the CLI command."""
+    # 在 main 函数中初始化日志，确保在 uvicorn 启动前执行
+    global service_name
+    
+    # 重新获取服务名称（确保使用最新的环境变量）
+    if os.environ.get('ASR_SERVICE_TYPE') == 'interviewer':
+        service_name = "asr-interviewer"  
+    else:
+        service_name = "asr-user"
+    
+    # 设置文件日志输出
+    file_handlers = setup_file_logging(service_name)
+    root_logger = logging.getLogger()
+    for handler in file_handlers:
+        root_logger.addHandler(handler)
+    
+    # 记录启动信息
+    logger.info(f"WhisperLiveKit {service_name} starting up in main()")
+    logger.info(f"Log files will be written to: {os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')}/[level]/{service_name}/{datetime.now().strftime('%Y-%m-%d')}/[level].log")
+    
+    # 在 uvicorn 启动前记录启动信息
+    logger.info("Starting uvicorn server...")
+    
     import uvicorn
+    
+    # 配置 uvicorn 日志，使用我们的文件处理器
+    uvicorn_log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            },
+            "file_info": {
+                "formatter": "default",
+                "class": "logging.FileHandler",
+                "filename": f"/opt/cuemate/logs/info/{service_name}/{datetime.now().strftime('%Y-%m-%d')}/info.log",
+                "encoding": "utf-8",
+                "level": "INFO",
+            },
+            "file_error": {
+                "formatter": "default", 
+                "class": "logging.FileHandler",
+                "filename": f"/opt/cuemate/logs/error/{service_name}/{datetime.now().strftime('%Y-%m-%d')}/error.log",
+                "encoding": "utf-8",
+                "level": "ERROR",
+            },
+        },
+        "loggers": {
+            "uvicorn": {
+                "level": "INFO",
+                "handlers": ["default", "file_info"],
+                "propagate": False,
+            },
+            "uvicorn.error": {
+                "level": "ERROR", 
+                "handlers": ["default", "file_error"],
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "level": "INFO",
+                "handlers": ["default", "file_info"],
+                "propagate": False,
+            },
+        },
+        "root": {
+            "level": "INFO",
+            "handlers": ["default", "file_info"],
+        },
+    }
     
     uvicorn_kwargs = {
         "app": "whisperlivekit.basic_server:app",
@@ -237,6 +397,8 @@ def main():
         "reload": False,
         "log_level": "info",
         "lifespan": "on",
+        "log_config": None,  # 完全禁用 uvicorn 的日志配置
+        "access_log": False,  # 禁用访问日志
     }
     
     ssl_kwargs = {}
