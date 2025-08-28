@@ -244,6 +244,67 @@ app.mount("/web", StaticFiles(directory=str(web_dir)), name="web")
 async def get():
     return HTMLResponse(get_web_interface_html())
 
+@app.get("/config")
+async def get_config():
+    """获取当前转录引擎的配置"""
+    global transcription_engine
+    if transcription_engine is None:
+        return {"error": "Transcription engine not initialized"}
+    
+    # 将 Namespace 转换为字典
+    config = vars(transcription_engine.args)
+    
+    # 过滤掉一些内部参数，只返回可配置的参数
+    filterable_keys = {
+        'host', 'port', 'warmup_file', 'ssl_certfile', 'ssl_keyfile', 
+        'model_cache_dir', 'model_dir', 'model_path', 'cif_ckpt_path',
+        'segmentation_model', 'embedding_model'
+    }
+    
+    # 创建返回的配置字典
+    public_config = {k: v for k, v in config.items() if k not in filterable_keys}
+    
+    return {"config": public_config}
+
+@app.post("/config")
+async def update_config(new_config: dict):
+    """更新转录引擎配置（需要重启生效）"""
+    global transcription_engine
+    if transcription_engine is None:
+        return {"error": "Transcription engine not initialized"}
+    
+    try:
+        # 获取当前配置
+        current_config = vars(transcription_engine.args)
+        
+        # 验证并更新可修改的配置项
+        updatable_params = {
+            'diarization', 'punctuation_split', 'min_chunk_size', 'model', 
+            'lan', 'task', 'backend', 'vac', 'vac_chunk_size', 'log_level',
+            'transcription', 'vad', 'buffer_trimming', 'confidence_validation', 
+            'buffer_trimming_sec', 'frame_threshold', 'beams', 'decoder_type',
+            'audio_max_len', 'audio_min_len', 'never_fire', 'init_prompt',
+            'static_init_prompt', 'max_context_tokens', 'diarization_backend'
+        }
+        
+        updated_params = {}
+        for key, value in new_config.items():
+            if key in updatable_params:
+                # 更新配置
+                setattr(transcription_engine.args, key, value)
+                updated_params[key] = value
+        
+        return {
+            "success": True,
+            "message": f"配置已更新，共更新 {len(updated_params)} 个参数",
+            "updated_params": updated_params,
+            "note": "配置已保存到内存中，部分参数可能需要重启服务才能生效"
+        }
+        
+    except Exception as e:
+        logger.error(f"更新配置失败: {e}", exc_info=True)
+        return {"error": f"更新配置失败: {str(e)}"}
+
 
 async def handle_websocket_results(websocket, results_generator):
     """Consumes results from the audio processor and sends them via WebSocket."""
