@@ -1,11 +1,11 @@
 import asyncio
 import numpy as np
 from time import time
-import logging
 import traceback
 from datetime import timedelta
 from whisperlivekit.timed_objects import ASRToken, Silence
 from whisperlivekit.core import TranscriptionEngine, online_factory
+from whisperlivekit.cuemate_logger import get_logger
 
 try:
     from whisperlivekit.remove_silences import handle_silences
@@ -19,10 +19,8 @@ try:
 except ImportError:
     FixedVADIterator = None
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+# 使用 CueMate 统一日志系统
+logger = get_logger(__name__)
 
 SENTINEL = object()  # unique sentinel object for end of stream marker
 

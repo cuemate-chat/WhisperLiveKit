@@ -1,17 +1,16 @@
 import sys
 import numpy as np
-import logging
 from typing import List, Tuple, Optional
-import logging
 import platform
 from whisperlivekit.timed_objects import ASRToken, Transcript
 from whisperlivekit.warmup import load_file
 from whisperlivekit.simul_whisper.license_simulstreaming import SIMULSTREAMING_LICENSE
+from whisperlivekit.cuemate_logger import get_logger
 from .whisper import load_model, tokenizer
 from .whisper.audio import TOKENS_PER_SECOND
 import os
 import gc
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 import torch
 from whisperlivekit.simul_whisper.config import AlignAttConfig

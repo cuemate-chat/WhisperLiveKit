@@ -2,128 +2,27 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from whisperlivekit import TranscriptionEngine, AudioProcessor, parse_args
+from whisperlivekit.cuemate_logger import get_logger, get_service_name, setup_exception_handlers
 import asyncio
-import logging
-import logging.handlers
 import os
-from datetime import datetime, timezone, timedelta
 import sys
 import warnings
 
-# 设置东八区时区
-CHINA_TZ = timezone(timedelta(hours=8))
+# 使用 CueMate 统一日志系统
+service_name = get_service_name()
+logger = get_logger(__name__)
 
-def get_china_time():
-    """获取东八区当前时间"""
-    return datetime.now(CHINA_TZ)
-
-# 设置日志格式和基础配置
-def setup_file_logging(service_name: str = None):
-    """设置文件日志输出，按照 CueMate 项目的日志格式"""
-    if service_name is None:
-        # 根据环境变量确定服务名称
-        if os.environ.get('ASR_SERVICE_TYPE') == 'interviewer':
-            service_name = "asr-interviewer"
-        else:
-            service_name = "asr-user"
-    
-    log_base_dir = os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')
-    today = get_china_time().strftime('%Y-%m-%d')
-    
-    # 为不同级别创建文件处理器
-    levels = ['debug', 'info', 'warn', 'error']
-    handlers = []
-    
-    for level_name in levels:
-        level_dir = os.path.join(log_base_dir, level_name, service_name, today)
-        os.makedirs(level_dir, exist_ok=True)
-        
-        log_file = os.path.join(level_dir, f'{level_name}.log')
-        
-        # 创建文件处理器
-        handler = logging.FileHandler(log_file, encoding='utf-8')
-        handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        ))
-        
-        # 设置日志级别过滤
-        if level_name == 'debug':
-            handler.setLevel(logging.DEBUG)
-        elif level_name == 'info':
-            handler.setLevel(logging.INFO)
-        elif level_name == 'warn':
-            handler.setLevel(logging.WARNING)
-        elif level_name == 'error':
-            handler.setLevel(logging.ERROR)
-            
-        handlers.append(handler)
-    
-    return handlers
-
-# 获取服务名称（根据环境变量 ASR_SERVICE_TYPE 判断）
-if os.environ.get('ASR_SERVICE_TYPE') == 'interviewer':
-    service_name = "asr-interviewer"
-else:
-    service_name = "asr-user"
-
-# 设置控制台输出
-logging.basicConfig(
-    level=logging.INFO, 
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()]
-)
-
-# 设置文件日志输出
-file_handlers = setup_file_logging(service_name)
-
-# 获取根日志记录器并添加文件处理器
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.DEBUG)
-
-for handler in file_handlers:
-    root_logger.addHandler(handler)
-
-# 设置应用日志记录器
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+# 设置全局异常处理器
+setup_exception_handlers(logger)
 
 # 捕获 warnings 到日志
 warnings.simplefilter("default")
+import logging
 logging.captureWarnings(True)
-
-# 全局捕获未处理异常并写入日志文件
-def _global_excepthook(exc_type, exc_value, exc_traceback):
-    if issubclass(exc_type, KeyboardInterrupt):
-        # 让 KeyboardInterrupt 走默认行为，便于优雅退出
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-    logging.getLogger("unhandled_exception").error(
-        "Uncaught exception",
-        exc_info=(exc_type, exc_value, exc_traceback),
-    )
-
-sys.excepthook = _global_excepthook
-
-# 捕获 asyncio 事件循环中的未处理异常
-def _asyncio_exception_handler(loop, context):
-    message = context.get("message")
-    exception = context.get("exception")
-    if exception is not None:
-        logging.getLogger("asyncio").error(message or "Asyncio exception", exc_info=exception)
-    else:
-        logging.getLogger("asyncio").error(message or f"Asyncio error context: {context}")
-
-try:
-    asyncio.get_event_loop().set_exception_handler(_asyncio_exception_handler)
-except RuntimeError:
-    # 在新事件循环创建前设置可能抛错，忽略并在 lifespan 中由 uvicorn 管理
-    pass
-
-
 
 # 记录启动信息
 logger.info(f"{service_name} starting up")
+from whisperlivekit.cuemate_logger import get_china_time
 _log_base_dir_display = os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')
 logger.info(
     "Log files will be written to: %s/[level]/%s/%s/[level].log",
@@ -148,86 +47,13 @@ WhisperLiveKit 0.2.8 has introduced a new fast encoder feature using MLX Whisper
     
     global transcription_engine
     
-    # 重新配置 uvicorn 日志记录器，让它们也写入到我们的日志文件
-    import logging
-    
-    # 为 uvicorn 日志记录器添加文件处理器，避免重复
+    # 为 uvicorn 使用统一的日志配置
+    from whisperlivekit.cuemate_logger import create_logger_for_service
+
     uvicorn_loggers = ['uvicorn', 'uvicorn.error', 'uvicorn.access']
-    
     for logger_name in uvicorn_loggers:
-        logger_obj = logging.getLogger(logger_name)
-        
-        # 清除现有的文件处理器，避免重复
-        for handler in logger_obj.handlers[:]:
-            if isinstance(handler, logging.FileHandler):
-                logger_obj.removeHandler(handler)
-        
-        # 添加 debug 级别文件处理器
-        debug_dir = os.path.join(
-            os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
-            'debug', service_name, get_china_time().strftime('%Y-%m-%d')
-        )
-        os.makedirs(debug_dir, exist_ok=True)
-        debug_file = os.path.join(debug_dir, 'debug.log')
-        
-        debug_handler = logging.FileHandler(debug_file, encoding='utf-8')
-        debug_handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        ))
-        debug_handler.setLevel(logging.DEBUG)
-        logger_obj.addHandler(debug_handler)
-        
-        # 添加 info 级别文件处理器
-        info_dir = os.path.join(
-            os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
-            'info', service_name, get_china_time().strftime('%Y-%m-%d')
-        )
-        os.makedirs(info_dir, exist_ok=True)
-        info_file = os.path.join(info_dir, 'info.log')
-        
-        info_handler = logging.FileHandler(info_file, encoding='utf-8')
-        info_handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        ))
-        info_handler.setLevel(logging.INFO)
-        logger_obj.addHandler(info_handler)
-        
-        # 添加 warn 级别文件处理器
-        warn_dir = os.path.join(
-            os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
-            'warn', service_name, get_china_time().strftime('%Y-%m-%d')
-        )
-        os.makedirs(warn_dir, exist_ok=True)
-        warn_file = os.path.join(warn_dir, 'warn.log')
-        
-        warn_handler = logging.FileHandler(warn_file, encoding='utf-8')
-        warn_handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        ))
-        warn_handler.setLevel(logging.WARNING)
-        logger_obj.addHandler(warn_handler)
-        
-        # 添加 error 级别文件处理器
-        error_dir = os.path.join(
-            os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs'),
-            'error', service_name, get_china_time().strftime('%Y-%m-%d')
-        )
-        os.makedirs(error_dir, exist_ok=True)
-        error_file = os.path.join(error_dir, 'error.log')
-        
-        error_handler = logging.FileHandler(error_file, encoding='utf-8')
-        error_handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        ))
-        error_handler.setLevel(logging.ERROR)
-        logger_obj.addHandler(error_handler)
-        
-        logger_obj.setLevel(logging.DEBUG)
-        logger_obj.propagate = False  # 防止传播到根日志记录器
+        # 为每个 uvicorn logger 创建统一配置
+        create_logger_for_service(service_name, logger_name)
     
     transcription_engine = TranscriptionEngine(
         **vars(args),
@@ -383,83 +209,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
 def main():
     """Entry point for the CLI command."""
-    # 在 main 函数中初始化日志，确保在 uvicorn 启动前执行
-    global service_name
-    
-    # 重新获取服务名称（确保使用最新的环境变量）
-    if os.environ.get('ASR_SERVICE_TYPE') == 'interviewer':
-        service_name = "asr-interviewer"
-    else:
-        service_name = "asr-user"
-    
-    # 设置文件日志输出
-    file_handlers = setup_file_logging(service_name)
-    root_logger = logging.getLogger()
-    for handler in file_handlers:
-        root_logger.addHandler(handler)
-    
-    # 记录启动信息
     logger.info(f"{service_name} starting up in main()")
-    logger.info(f"Log files will be written to: {os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')}/[level]/{service_name}/{get_china_time().strftime('%Y-%m-%d')}/[level].log")
-    
-    # 在 uvicorn 启动前记录启动信息
     logger.info("Starting uvicorn server...")
-    
+
     import uvicorn
-    
-    # 配置 uvicorn 日志，使用我们的文件处理器
-    uvicorn_log_config = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "default": {
-                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                "datefmt": "%Y-%m-%d %H:%M:%S",
-            },
-        },
-        "handlers": {
-            "default": {
-                "formatter": "default",
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stdout",
-            },
-            "file_info": {
-                "formatter": "default",
-                "class": "logging.FileHandler",
-                "filename": f"/opt/cuemate/logs/info/{service_name}/{get_china_time().strftime('%Y-%m-%d')}/info.log",
-                "encoding": "utf-8",
-                "level": "INFO",
-            },
-            "file_error": {
-                "formatter": "default", 
-                "class": "logging.FileHandler",
-                "filename": f"/opt/cuemate/logs/error/{service_name}/{get_china_time().strftime('%Y-%m-%d')}/error.log",
-                "encoding": "utf-8",
-                "level": "ERROR",
-            },
-        },
-        "loggers": {
-            "uvicorn": {
-                "level": "INFO",
-                "handlers": ["default", "file_info"],
-                "propagate": False,
-            },
-            "uvicorn.error": {
-                "level": "ERROR", 
-                "handlers": ["default", "file_error"],
-                "propagate": False,
-            },
-            "uvicorn.access": {
-                "level": "INFO",
-                "handlers": ["default", "file_info"],
-                "propagate": False,
-            },
-        },
-        "root": {
-            "level": "INFO",
-            "handlers": ["default", "file_info"],
-        },
-    }
     
     uvicorn_kwargs = {
         "app": "whisperlivekit.basic_server:app",

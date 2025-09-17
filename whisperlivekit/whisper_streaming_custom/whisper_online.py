@@ -4,10 +4,10 @@ import numpy as np
 import librosa
 from functools import lru_cache
 import time
-import logging
 from .backends import FasterWhisperASR, MLXWhisper, WhisperTimestampedASR, OpenaiApiASR
+from whisperlivekit.cuemate_logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 

@@ -1,7 +1,6 @@
+from whisperlivekit.cuemate_logger import get_logger
 
-import logging
-
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 def load_file(warmup_file=None, timeout=5):
     import os

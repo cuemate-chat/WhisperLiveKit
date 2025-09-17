@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import logging
 import threading
 import time
 import wave
@@ -8,8 +7,9 @@ from typing import List, Optional
 from queue import SimpleQueue, Empty
 
 from whisperlivekit.timed_objects import SpeakerSegment
+from whisperlivekit.cuemate_logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 try:
     from nemo.collections.asr.models import SortformerEncLabelModel

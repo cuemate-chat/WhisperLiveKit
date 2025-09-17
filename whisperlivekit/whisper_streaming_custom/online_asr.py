@@ -1,10 +1,10 @@
 import sys
 import numpy as np
-import logging
 from typing import List, Tuple, Optional
 from whisperlivekit.timed_objects import ASRToken, Sentence, Transcript
+from whisperlivekit.cuemate_logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class HypothesisBuffer:
     """

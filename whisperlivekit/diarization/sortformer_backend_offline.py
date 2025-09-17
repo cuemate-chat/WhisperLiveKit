@@ -1,12 +1,12 @@
 import numpy as np
 import torch
-import logging
 
 from nemo.collections.asr.models import SortformerEncLabelModel
 from nemo.collections.asr.modules import AudioToMelSpectrogramPreprocessor
 import librosa
+from whisperlivekit.cuemate_logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 def load_model():
 

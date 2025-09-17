@@ -1,7 +1,7 @@
 # This code was originally in simul_whisper/transcriber/simul_whisper.py . It is adapted a lot for SimulStreaming.
 
 import os
-import logging
+from whisperlivekit.cuemate_logger import get_logger
 
 import torch
 import torch.nn.functional as F
@@ -21,7 +21,7 @@ import numpy as np
 from .generation_progress import *
 
 DEC_PAD = 50257
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 try:

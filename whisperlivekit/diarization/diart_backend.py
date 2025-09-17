@@ -2,9 +2,9 @@ import asyncio
 import re
 import threading
 import numpy as np
-import logging
 import time
 from queue import SimpleQueue, Empty
+from whisperlivekit.cuemate_logger import get_logger
 
 from diart import SpeakerDiarization, SpeakerDiarizationConfig
 from diart.inference import StreamingInference
@@ -16,7 +16,7 @@ from typing import Tuple, Any, List
 from pyannote.core import Annotation
 import diart.models as m
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 def extract_number(s: str) -> int:
     m = re.search(r'\d+', s)

@@ -1,12 +1,13 @@
 import sys
-import logging
 import io
 import soundfile as sf
 import math
 from typing import List
 import numpy as np
 from whisperlivekit.timed_objects import ASRToken
-logger = logging.getLogger(__name__)
+from whisperlivekit.cuemate_logger import get_logger
+
+logger = get_logger(__name__)
 class ASRBase:
     sep = " "  # join transcribe words with this character (" " for whisper_timestamped,
               # "" for faster-whisper because it emits the spaces when needed)
