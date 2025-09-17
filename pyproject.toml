@@ -10,12 +10,11 @@ readme = "README.md"
 authors = [
     { name = "Quentin Fuxa" }
 ]
-license = { file = "LICENSE" }
+license = { text = "MIT" }
 requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -50,8 +49,7 @@ Homepage = "https://github.com/QuentinFuxa/WhisperLiveKit"
 whisperlivekit-server = "whisperlivekit.basic_server:main"
 
 [tool.setuptools]
-packages = ["whisperlivekit", "whisperlivekit.diarization", "whisperlivekit.simul_whisper", "whisperlivekit.simul_whisper.whisper", "whisperlivekit.simul_whisper.whisper.assets", "whisperlivekit.simul_whisper.whisper.normalizers", "whisperlivekit.web", "whisperlivekit.whisper_streaming_custom"]
+packages = ["whisperlivekit", "whisperlivekit.diarization", "whisperlivekit.simul_whisper", "whisperlivekit.simul_whisper.whisper", "whisperlivekit.simul_whisper.whisper.assets", "whisperlivekit.simul_whisper.whisper.normalizers", "whisperlivekit.whisper_streaming_custom"]
 
 [tool.setuptools.package-data]
-whisperlivekit = ["web/*.html", "web/*.css", "web/*.js", "web/src/*.svg"]
 "whisperlivekit.simul_whisper.whisper.assets" = ["*.tiktoken", "*.npz"]

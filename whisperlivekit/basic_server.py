@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from whisperlivekit import TranscriptionEngine, AudioProcessor, get_inline_ui_html, parse_args
 from whisperlivekit import TranscriptionEngine, AudioProcessor, parse_args
 import asyncio
 import logging

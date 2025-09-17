@@ -132,7 +132,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await audio_processor.process_audio(message)        
 ```
 
-**Frontend Implementation**: The package includes an HTML/JavaScript implementation [here](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/whisperlivekit/web/live_transcription.html). You can also import it using `from whisperlivekit import get_inline_ui_html` & `page = get_inline_ui_html()`
+**API Integration**: The package provides a WebSocket API for real-time transcription. Connect to `ws://localhost:8000/asr` and send PCM audio data directly.
 
 
 ## Parameters & Configuration
@@ -214,7 +214,7 @@ To deploy WhisperLiveKit in production:
    gunicorn -k uvicorn.workers.UvicornWorker -w 4 your_app:app
    ```
 
-2. **Frontend**: Host your customized version of the `html` example & ensure WebSocket connection points correctly
+2. **Client Integration**: Implement WebSocket client to connect to the transcription service
 
 3. **Nginx Configuration** (recommended for production):
     ```nginx    
