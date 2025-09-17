@@ -180,60 +180,85 @@ class AudioProcessor:
 
     async def transcription_worker(self):
         """转录工作器"""
-        if not self.args.transcription:
-            return
-
         logger.info("转录工作器启动")
 
-        while not self.is_stopping:
+        while True:
             try:
-                # 从队列获取音频数据
-                audio_chunk = await asyncio.wait_for(
-                    self.transcription_queue.get(), timeout=1.0
-                )
+                audio_chunk = await self.transcription_queue.get()
 
-                # 使用在线转录引擎处理
+                if audio_chunk is SENTINEL:
+                    logger.info("转录工作器收到结束信号")
+                    break
+
+                # 处理转录
                 if hasattr(self, 'online') and self.online:
-                    new_tokens = self.online.process(audio_chunk)
-                    if new_tokens:
-                        current_time = time() - self.beg_loop
-                        await self.update_transcription(
-                            new_tokens,
-                            " ".join([t.text for t in new_tokens]),
-                            current_time,
-                            " "
-                        )
+                    output = self.online.process_iter(audio_chunk)
+                    for o in output:
+                        if o is None:
+                            continue
 
-            except asyncio.TimeoutError:
-                continue
+                        # 检查输出格式并安全处理
+                        if isinstance(o, (list, tuple)):
+                            tokens = o[1] if len(o) > 1 and hasattr(o[1], '__len__') else []
+                            text = str(o[0]) if len(o) > 0 else ""
+                        else:
+                            # 如果o是单个值（如float），转换为文本
+                            tokens = []
+                            text = str(o) if o is not None else ""
+
+                        await self.update_transcription(tokens, text, 0, " ")
+
             except Exception as e:
-                logger.error(f"转录工作器错误: {e}")
-                await asyncio.sleep(0.1)
+                logger.error(f"转录工作器错误: {e}", exc_info=True)
+
+        logger.info("转录工作器结束")
 
     async def diarization_worker(self):
         """说话人分离工作器"""
-        if not self.args.diarization:
-            return
-
         logger.info("说话人分离工作器启动")
 
-        while not self.is_stopping:
+        while True:
             try:
-                # 从队列获取音频数据
-                audio_chunk = await asyncio.wait_for(
-                    self.diarization_queue.get(), timeout=1.0
-                )
+                audio_chunk = await self.diarization_queue.get()
 
-                # 这里可以添加说话人分离逻辑
-                # 暂时使用简单的时间戳
-                current_time = time() - self.beg_loop
-                await self.update_diarization(current_time)
+                if audio_chunk is SENTINEL:
+                    logger.info("说话人分离工作器收到结束信号")
+                    break
 
-            except asyncio.TimeoutError:
-                continue
+                # 处理说话人分离
+                if hasattr(self, 'online_diarization') and self.online_diarization:
+                    await self.online_diarization.diarize(audio_chunk)
+                else:
+                    # 简单的时间戳处理
+                    current_time = time() - self.beg_loop if self.beg_loop else 0
+                    await self.update_diarization(current_time)
+
             except Exception as e:
-                logger.error(f"说话人分离工作器错误: {e}")
-                await asyncio.sleep(0.1)
+                logger.error(f"说话人分离工作器错误: {e}", exc_info=True)
+
+        logger.info("说话人分离工作器结束")
+
+    async def translation_worker(self):
+        """翻译工作器"""
+        logger.info("翻译工作器启动")
+
+        while True:
+            try:
+                item = await self.translation_queue.get()
+
+                if item is SENTINEL:
+                    logger.info("翻译工作器收到结束信号")
+                    break
+
+                # 处理翻译
+                if hasattr(self, 'online_translation') and self.online_translation:
+                    # 实现翻译逻辑
+                    pass
+
+            except Exception as e:
+                logger.error(f"翻译工作器错误: {e}", exc_info=True)
+
+        logger.info("翻译工作器结束")
 
     async def format_output(self):
         """格式化输出结果"""
@@ -288,10 +313,151 @@ class AudioProcessor:
 
         self.all_tasks_for_cleanup.clear()
 
-    async def write_data(self, message):
-        """接收PCM音频数据"""
-        if isinstance(message, bytes):
+    async def process_audio(self, message):
+        """处理传入的音频数据"""
+        if not self.beg_loop:
+            self.beg_loop = time()
+
+        if len(message) == 0:
+            # 空消息表示音频结束
+            await self.handle_end_of_audio()
+            return
+
+        # 只处理PCM输入
+        if self.args.pcm_input:
             self.pcm_buffer.extend(message)
-            logger.debug(f"接收PCM数据: {len(message)} 字节, 缓冲区总大小: {len(self.pcm_buffer)}")
+            await self.handle_pcm_data()
+        else:
+            logger.error("不支持非PCM输入，请使用 --pcm-input 参数")
+
+    async def handle_pcm_data(self):
+        """处理PCM数据"""
+        if len(self.pcm_buffer) < self.bytes_per_sec:
+            return
+
+        if len(self.pcm_buffer) > self.max_bytes_per_sec:
+            logger.warning(f"音频缓冲区过大: {len(self.pcm_buffer) / self.bytes_per_sec:.2f}s")
+
+        # 处理音频块
+        pcm_array = self.convert_pcm_to_float(self.pcm_buffer[:self.max_bytes_per_sec])
+        self.pcm_buffer = self.pcm_buffer[self.max_bytes_per_sec:]
+
+        # 发送到转录队列
+        if self.transcription_queue:
+            await self.transcription_queue.put(pcm_array)
+
+        # 发送到说话人分离队列
+        if self.diarization_queue:
+            await self.diarization_queue.put(pcm_array)
+
+    async def handle_end_of_audio(self):
+        """处理音频结束信号"""
+        logger.info("收到音频结束信号")
+
+        # 处理剩余的PCM数据
+        if len(self.pcm_buffer) > 0:
+            pcm_array = self.convert_pcm_to_float(self.pcm_buffer)
+            self.pcm_buffer.clear()
+
+            if self.transcription_queue:
+                await self.transcription_queue.put(pcm_array)
+            if self.diarization_queue:
+                await self.diarization_queue.put(pcm_array)
+
+        # 发送结束信号到所有队列
+        if self.transcription_queue:
+            await self.transcription_queue.put(SENTINEL)
+        if self.diarization_queue:
+            await self.diarization_queue.put(SENTINEL)
+        if self.translation_queue:
+            await self.translation_queue.put(SENTINEL)
+
+    async def create_tasks(self):
+        """创建处理任务并返回结果生成器"""
+        tasks = []
+
+        # 启动转录任务
+        if self.transcription_queue:
+            self.transcription_task = asyncio.create_task(self.transcription_worker())
+            tasks.append(self.transcription_task)
+
+        # 启动说话人分离任务
+        if self.diarization_queue:
+            self.diarization_task = asyncio.create_task(self.diarization_worker())
+            tasks.append(self.diarization_task)
+
+        # 启动翻译任务
+        if self.translation_queue:
+            self.translation_task = asyncio.create_task(self.translation_worker())
+            tasks.append(self.translation_task)
+
+        # 返回结果生成器
+        return self.result_generator()
+
+    async def result_generator(self):
+        """生成处理结果"""
+        last_time = time()
+
+        while not self.is_stopping:
+            current_time = time()
+
+            async with self.lock:
+                # 创建状态对象
+                from whisperlivekit.timed_objects import State
+                state = State()
+                state.tokens = self.tokens
+                state.translated_segments = self.translated_segments
+                state.buffer_transcription = self.buffer_transcription
+                state.buffer_diarization = self.buffer_diarization
+                state.end_buffer = self.end_buffer
+                state.end_attributed_speaker = self.end_attributed_speaker
+                state.remaining_time_transcription = 0.0
+                state.remaining_time_diarization = 0.0
+
+                # 格式化输出
+                try:
+                    from whisperlivekit.results_formater import format_output
+                    response_tuple = format_output(
+                        state=state,
+                        silence=self.silence,
+                        current_time=current_time,
+                        args=self.args,
+                        debug=False,
+                        sep=self.sep
+                    )
+                except ImportError:
+                    # 如果没有results_formater，使用简单格式
+                    response_tuple = (
+                        [],  # lines
+                        [token.text for token in state.tokens],  # undiarized_text
+                        state.buffer_transcription,
+                        state.buffer_diarization
+                    )
+
+                # 包装tuple为对象
+                from whisperlivekit.timed_objects import FormattedResponse
+                response = FormattedResponse.from_tuple(response_tuple)
+
+                yield response
+
+            await asyncio.sleep(0.1)  # 100ms间隔
+
+    async def cleanup(self):
+        """清理资源"""
+        logger.info("开始清理音频处理器资源")
+
+        self.is_stopping = True
+
+        # 等待所有任务完成
+        tasks = [t for t in [self.transcription_task, self.diarization_task, self.translation_task] if t]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        logger.info("音频处理器清理完成")
+
+    async def write_data(self, message):
+        """接收PCM音频数据 - 兼容接口"""
+        if isinstance(message, bytes):
+            await self.process_audio(message)
             return True
         return False
