@@ -1,14 +1,11 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from whisperlivekit import TranscriptionEngine, AudioProcessor, get_inline_ui_html, parse_args
+from whisperlivekit import TranscriptionEngine, AudioProcessor, parse_args
 import asyncio
 import logging
 import logging.handlers
-from starlette.staticfiles import StaticFiles
-import pathlib
-import whisperlivekit.web as webpkg
 import os
 from datetime import datetime, timezone, timedelta
 import sys
@@ -127,7 +124,7 @@ except RuntimeError:
 
 
 # 记录启动信息
-logger.info(f"WhisperLiveKit {service_name} starting up")
+logger.info(f"{service_name} starting up")
 _log_base_dir_display = os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')
 logger.info(
     "Log files will be written to: %s/[level]/%s/%s/[level].log",
@@ -246,12 +243,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-web_dir = pathlib.Path(webpkg.__file__).parent
-app.mount("/web", StaticFiles(directory=str(web_dir)), name="web")
-
 @app.get("/")
 async def get():
-    return HTMLResponse(get_inline_ui_html())
+    return {"message": "WhisperLiveKit ASR Service", "service": service_name, "endpoints": ["/asr", "/config"]}
 
 @app.get("/config")
 async def get_config():
@@ -323,7 +317,6 @@ async def handle_websocket_results(websocket, results_generator):
             await websocket.send_json(response.to_dict())
             result_count += 1
             logger.debug(f"Sending result #{result_count}: {response}")
-            await websocket.send_json(response)
         # when the results_generator finishes it means all audio has been processed
         logger.info(f"Results generator finished after {result_count} responses. Sending 'ready_to_stop' to client.")
         await websocket.send_json({"type": "ready_to_stop"})
@@ -396,7 +389,7 @@ def main():
     
     # 重新获取服务名称（确保使用最新的环境变量）
     if os.environ.get('ASR_SERVICE_TYPE') == 'interviewer':
-        service_name = "asr-interviewer"  
+        service_name = "asr-interviewer"
     else:
         service_name = "asr-user"
     
@@ -407,7 +400,7 @@ def main():
         root_logger.addHandler(handler)
     
     # 记录启动信息
-    logger.info(f"WhisperLiveKit {service_name} starting up in main()")
+    logger.info(f"{service_name} starting up in main()")
     logger.info(f"Log files will be written to: {os.environ.get('CUEMATE_LOG_DIR', '/opt/cuemate/logs')}/[level]/{service_name}/{get_china_time().strftime('%Y-%m-%d')}/[level].log")
     
     # 在 uvicorn 启动前记录启动信息
