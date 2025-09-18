@@ -78,6 +78,7 @@ class AudioProcessor:
         # Task references
         self.transcription_task = None
         self.diarization_task = None
+        self.translation_task = None
         self.watchdog_task = None
         self.all_tasks_for_cleanup = []
 

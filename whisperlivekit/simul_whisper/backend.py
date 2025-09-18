@@ -115,12 +115,16 @@ class SimulStreamingOnlineProcessor:
             split_tokens = generation["result"]["split_tokens"]
         else:
             split_words, split_tokens = self.model.tokenizer.split_to_word_tokens(tokens)
-        progress = generation["progress"]
+        progress = generation.get("progress", [])
+        if not progress:
+            # 如果没有进度信息，返回没有时间戳的词汇
+            return [(word, None, None) for word in split_words]
+
         frames = [p["most_attended_frames"][0] for p in progress]
         absolute_timestamps = [p["absolute_timestamps"][0] for p in progress]
         tokens_queue = tokens.copy()
         timestamped_words = []
-        
+
         for word, word_tokens in zip(split_words, split_tokens):
             # start_frame = None
             # end_frame = None
