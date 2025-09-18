@@ -12,8 +12,8 @@ from typing import Optional
 
 def get_china_time():
     """获取中国时间"""
-    import pytz
-    china_tz = pytz.timezone('Asia/Shanghai')
+    from datetime import timezone, timedelta
+    china_tz = timezone(timedelta(hours=8))
     return datetime.now(china_tz)
 
 
