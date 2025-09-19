@@ -117,8 +117,8 @@ class SimulStreamingOnlineProcessor:
             split_words, split_tokens = self.model.tokenizer.split_to_word_tokens(tokens)
         progress = generation.get("progress", [])
         if not progress:
-            # 如果没有进度信息，返回没有时间戳的词汇
-            return [(word, None, None) for word in split_words]
+            # 如果没有进度信息，返回带有假时间戳的词汇，避免None值
+            return [(word, 0.0, 0.0) for word in split_words if word and word.strip()]
 
         frames = [p["most_attended_frames"][0] for p in progress]
         absolute_timestamps = [p["absolute_timestamps"][0] for p in progress]

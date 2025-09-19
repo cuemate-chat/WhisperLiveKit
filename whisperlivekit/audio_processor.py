@@ -183,29 +183,50 @@ class AudioProcessor:
 
         while True:
             try:
+                logger.info("转录工作器等待音频数据...")
                 audio_chunk = await self.transcription_queue.get()
 
                 if audio_chunk is SENTINEL:
                     logger.info("转录工作器收到结束信号")
                     break
 
+                logger.info(f"转录工作器收到音频块: 形状={audio_chunk.shape}, 数据类型={audio_chunk.dtype}, 最大值={audio_chunk.max():.4f}, 最小值={audio_chunk.min():.4f}")
+
                 # 处理转录
                 if hasattr(self, 'online') and self.online:
+                    logger.info("开始调用 online.process_iter...")
                     output = self.online.process_iter(audio_chunk)
+                    logger.info(f"process_iter 返回输出: {type(output)}, 长度: {len(list(output)) if hasattr(output, '__iter__') else 'N/A'}")
+
+                    # 重新获取输出（因为上面的list()消费了迭代器）
+                    output = self.online.process_iter(audio_chunk)
+                    output_count = 0
                     for o in output:
+                        output_count += 1
+                        logger.info(f"处理输出项 #{output_count}: {type(o)}, 值: {o}")
+
                         if o is None:
+                            logger.info("跳过 None 输出")
                             continue
 
                         # 检查输出格式并安全处理
                         if isinstance(o, (list, tuple)):
                             tokens = o[1] if len(o) > 1 and hasattr(o[1], '__len__') else []
                             text = str(o[0]) if len(o) > 0 else ""
+                            logger.info(f"元组/列表输出 - 文本: '{text}', tokens数量: {len(tokens)}")
                         else:
                             # 如果o是单个值（如float），转换为文本
                             tokens = []
                             text = str(o) if o is not None else ""
+                            logger.info(f"单值输出 - 文本: '{text}'")
 
+                        logger.info(f"更新转录结果: '{text}'")
                         await self.update_transcription(tokens, text, 0, " ")
+
+                    if output_count == 0:
+                        logger.warning("process_iter 没有返回任何输出")
+                else:
+                    logger.error("转录引擎 online 不存在或未初始化")
 
             except Exception as e:
                 logger.error(f"转录工作器错误: {e}", exc_info=True)
@@ -319,12 +340,16 @@ class AudioProcessor:
 
         if len(message) == 0:
             # 空消息表示音频结束
+            logger.info("收到音频结束信号，开始处理结束")
             await self.handle_end_of_audio()
             return
+
+        logger.info(f"收到音频数据: {len(message)} 字节")
 
         # 只处理PCM输入
         if self.args.pcm_input:
             self.pcm_buffer.extend(message)
+            logger.info(f"PCM缓冲区大小: {len(self.pcm_buffer)} 字节，需要: {self.bytes_per_sec} 字节")
             await self.handle_pcm_data()
         else:
             logger.error("不支持非PCM输入，请使用 --pcm-input 参数")
@@ -332,7 +357,10 @@ class AudioProcessor:
     async def handle_pcm_data(self):
         """处理PCM数据"""
         if len(self.pcm_buffer) < self.bytes_per_sec:
+            logger.info(f"PCM缓冲区不足，当前: {len(self.pcm_buffer)}，需要: {self.bytes_per_sec}")
             return
+
+        logger.info(f"开始处理PCM数据，缓冲区大小: {len(self.pcm_buffer)} 字节")
 
         if len(self.pcm_buffer) > self.max_bytes_per_sec:
             logger.warning(f"音频缓冲区过大: {len(self.pcm_buffer) / self.bytes_per_sec:.2f}s")
@@ -341,9 +369,17 @@ class AudioProcessor:
         pcm_array = self.convert_pcm_to_float(self.pcm_buffer[:self.max_bytes_per_sec])
         self.pcm_buffer = self.pcm_buffer[self.max_bytes_per_sec:]
 
+        logger.info(f"转换PCM数组，样本数: {len(pcm_array)}，最大值: {pcm_array.max():.3f}，最小值: {pcm_array.min():.3f}")
+
         # 发送到转录队列
         if self.transcription_queue:
+            logger.info(f"准备发送音频到转录队列: 形状={pcm_array.shape}, 数据类型={pcm_array.dtype}")
             await self.transcription_queue.put(pcm_array)
+            logger.info("音频数据已发送到转录队列")
+            queue_size = self.transcription_queue.qsize()
+            logger.info(f"转录队列当前大小: {queue_size}")
+        else:
+            logger.error("转录队列不存在")
 
         # 发送到说话人分离队列
         if self.diarization_queue:
